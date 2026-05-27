@@ -245,3 +245,27 @@ resource "aws_instance" "ec2_2" {
 ${local.ec2_user_data_base}
 EOF
 }
+
+data "aws_eip" "eip_ec2_1" {
+  filter {
+    name   = "tag:EC2"
+    values = ["dev-ec2-1"]
+  }
+}
+
+data "aws_eip" "eip_ec2_2" {
+  filter {
+    name   = "tag:EC2"
+    values = ["dev-ec2-2"]
+  }
+}
+
+resource "aws_eip_association" "ec2_1" {
+  instance_id   = aws_instance.ec2_1.id
+  allocation_id = data.aws_eip.eip_ec2_1.id
+}
+
+resource "aws_eip_association" "ec2_2" {
+  instance_id   = aws_instance.ec2_2.id
+  allocation_id = data.aws_eip.eip_ec2_2.id
+}
