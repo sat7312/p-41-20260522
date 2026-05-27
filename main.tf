@@ -178,10 +178,14 @@ sudo sh -c 'echo "/swapfile swap swap defaults 0 0" >> /etc/fstab'
 END_OF_FILE
 }
 
+data "aws_ssm_parameter" "amazon_linux_ami" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
 # EC2 인스턴스 생성
 resource "aws_instance" "ec2_1" {
   # 사용할 AMI ID
-  ami = "ami-062cddb9d94dcf95d"
+  ami = data.aws_ssm_parameter.amazon_linux_ami.value
   # EC2 인스턴스 유형
   instance_type = "t3.micro"
   # 사용할 서브넷 ID
@@ -213,7 +217,7 @@ EOF
 # EC2 인스턴스 생성
 resource "aws_instance" "ec2_2" {
   # 사용할 AMI ID
-  ami = "ami-062cddb9d94dcf95d"
+  ami = data.aws_ssm_parameter.amazon_linux_ami.value
   # EC2 인스턴스 유형
   instance_type = "t3.micro"
   # 사용할 서브넷 ID
