@@ -121,8 +121,8 @@ resource "aws_security_group" "sg_1" {
 # EC2 설정 시작
 
 # EC2 역할 생성
-resource "aws_iam_role" "ec2_role_1" {
-  name = "${var.prefix}-ec2-role-1"
+resource "aws_iam_role" "ec2_role_4" {
+  name = "${var.prefix}-ec2-role-4"
 
   # 이 역할에 대한 신뢰 정책 설정. EC2 서비스가 이 역할을 가정할 수 있도록 설정
   assume_role_policy = <<EOF
@@ -144,36 +144,95 @@ resource "aws_iam_role" "ec2_role_1" {
 
 # EC2 역할에 AmazonS3FullAccess 정책을 부착
 resource "aws_iam_role_policy_attachment" "s3_full_access" {
-  role       = aws_iam_role.ec2_role_1.name
+  role       = aws_iam_role.ec2_role_4.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
 # EC2 역할에 AmazonEC2RoleforSSM 정책을 부착
 resource "aws_iam_role_policy_attachment" "ec2_ssm" {
-  role       = aws_iam_role.ec2_role_1.name
+  role       = aws_iam_role.ec2_role_4.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
 }
 
 # IAM 인스턴스 프로파일 생성
-resource "aws_iam_instance_profile" "instance_profile_1" {
-  name = "${var.prefix}-instance-profile-1"
-  role = aws_iam_role.ec2_role_1.name
+resource "aws_iam_instance_profile" "instance_profile_3" {
+  name = "${var.prefix}-instance-profile-3"
+  role = aws_iam_role.ec2_role_4.name
 }
 
 locals {
   ec2_user_data_base = <<-END_OF_FILE
 #!/bin/bash
-yum install docker -y
-systemctl enable docker
-systemctl start docker
-
-yum install git -y
-
+# 가상 메모리 4GB 설정
 sudo dd if=/dev/zero of=/swapfile bs=128M count=32
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 sudo sh -c 'echo "/swapfile swap swap defaults 0 0" >> /etc/fstab'
+
+# 도커 설치 및 실행/활성화
+yum install docker -y
+systemctl enable docker
+systemctl start docker
+
+# 도커 네트워크 생성
+docker network create common
+
+# nginx 설치
+docker run -d \
+  --name npm_1 \
+  --restart unless-stopped \
+  --network common \
+  -p 80:80 \
+  -p 443:443 \
+  -p 81:81 \
+  -e TZ=Asia/Seoul \
+  -v /dockerProjects/npm_1/volumes/data:/data \
+  -v /dockerProjects/npm_1/volumes/etc/letsencrypt:/etc/letsencrypt \
+  jc21/nginx-proxy-manager:latest
+
+# redis 설치
+docker run -d \
+  --name=redis_1 \
+  --restart unless-stopped \
+  --network common \
+  -p 6379:6379 \
+  -e TZ=Asia/Seoul \
+  redis --requirepass lldj123414
+
+# mysql 설치
+docker run -d \
+  --name mysql_1 \
+  --restart unless-stopped \
+  -v /dockerProjects/mysql_1/volumes/var/lib/mysql:/var/lib/mysql \
+  -v /dockerProjects/mysql_1/volumes/etc/mysql/conf.d:/etc/mysql/conf.d \
+  --network common \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=lldj123414 \
+  -e TZ=Asia/Seoul \
+  mysql:latest
+
+# MySQL 컨테이너가 준비될 때까지 대기
+echo "MySQL이 기동될 때까지 대기 중..."
+until docker exec mysql_1 mysql -uroot -plldj123414 -e "SELECT 1" &> /dev/null; do
+  echo "MySQL이 아직 준비되지 않음. 5초 후 재시도..."
+  sleep 5
+done
+echo "MySQL이 준비됨. 초기화 스크립트 실행 중..."
+
+docker exec mysql_1 mysql -uroot -plldj123414 -e "
+CREATE USER 'lldjlocal'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY '1234';
+CREATE USER 'lldjlocal'@'172.18.%.%' IDENTIFIED WITH caching_sha2_password BY '1234';
+CREATE USER 'lldj'@'%' IDENTIFIED WITH caching_sha2_password BY 'lldj123414';
+
+GRANT ALL PRIVILEGES ON *.* TO 'lldjlocal'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON *.* TO 'lldjlocal'@'172.18.%.%';
+GRANT ALL PRIVILEGES ON *.* TO 'lldj'@'%';
+
+CREATE DATABASE glog_prod;
+
+FLUSH PRIVILEGES;
+"
 
 END_OF_FILE
 }
@@ -196,7 +255,7 @@ resource "aws_instance" "ec2_1" {
   associate_public_ip_address = true
 
   # 인스턴스에 IAM 역할 연결
-  iam_instance_profile = aws_iam_instance_profile.instance_profile_1.name
+  iam_instance_profile = aws_iam_instance_profile.instance_profile_3.name
 
   # 인스턴스에 태그 설정
   tags = {
@@ -228,19 +287,19 @@ resource "aws_instance" "ec2_2" {
   associate_public_ip_address = true
 
   # 인스턴스에 IAM 역할 연결
-  iam_instance_profile = aws_iam_instance_profile.instance_profile_1.name
+  iam_instance_profile = aws_iam_instance_profile.instance_profile_3.name
 
   # 인스턴스에 태그 설정
   tags = {
     Name = "${var.prefix}-ec2-2"
   }
 
+
   # 루트 볼륨 설정
   root_block_device {
     volume_type = "gp3"
     volume_size = 12 # 볼륨 크기를 12GB로 설정
   }
-
   user_data = <<-EOF
 ${local.ec2_user_data_base}
 EOF
